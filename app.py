@@ -95,7 +95,7 @@ with st.sidebar:
         col_s1, col_s2 = st.columns(2)
         f_date = col_s1.date_input("試吃日期", value=st.session_state.get('edit_date', datetime.now()))
         f_slot = col_s2.selectbox("時段", ["中午", "晚上"], index=0 if st.session_state.get('edit_slot') == "中午" else 1)
-        f_time = st.text_input("精確時間", value=st.session_state.get('edit_time', ""), placeholder="例如 11:30")
+        f_time = st.text_input("預約時間", value=st.session_state.get('edit_time', ""), placeholder="例如 11:30")
         
         st.markdown("---")
         f_name = st.text_input("客戶姓名", value=st.session_state.get('edit_name', ""))
