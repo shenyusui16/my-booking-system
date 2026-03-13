@@ -67,19 +67,25 @@ st.markdown("""
 st.markdown("<h1 style='text-align: center; color: #ad1457;'>🌸 試吃預約管理系統</h1>", unsafe_allow_html=True)
 
 DB_FILE = "data.csv"
-# 標準欄位定義
-display_cols = ["預約時間", "姓名", "電話", "預產期", "產檢醫院", "住址", "禁忌", "天數", "來源", "業務", "簽約狀態"]
+
+# --- 核心修改：重新定義欄位順序與名稱 ---
+# 移除了「產檢醫院」，改用「醫院」並放在電話後面
+display_cols = ["預約時間", "姓名", "電話", "醫院", "預產期", "住址", "禁忌", "天數", "來源", "業務", "簽約狀態"]
 all_cols = ["日期", "時段"] + display_cols
 
 def load_data():
     if os.path.exists(DB_FILE):
         try:
             df = pd.read_csv(DB_FILE)
+            # 💡 資料過渡處理：如果舊資料有「產檢醫院」但沒「醫院」，自動更名搬家
+            if "產檢醫院" in df.columns and "醫院" not in df.columns:
+                df["醫院"] = df["產檢醫院"]
+            
             # 欄位補全與修復
             for col in all_cols:
                 if col not in df.columns:
                     df[col] = "未簽約" if col == "簽約狀態" else ""
-            return df
+            return df[all_cols] # 確保只回傳這 13 個欄位，其餘多餘列會被剔除
         except:
             return pd.DataFrame(columns=all_cols)
     return pd.DataFrame(columns=all_cols)
@@ -100,8 +106,9 @@ with st.sidebar:
         st.markdown("---")
         f_name = st.text_input("客戶姓名", value=st.session_state.get('edit_name', ""))
         f_phone = st.text_input("電話", value=st.session_state.get('edit_phone', ""))
+        # 將輸入標籤也改為「醫院」
+        f_hosp = st.text_input("醫院", value=st.session_state.get('edit_hosp', ""))
         f_due = st.date_input("預產期", value=st.session_state.get('edit_due', datetime.now()))
-        f_hosp = st.text_input("產檢醫院", value=st.session_state.get('edit_hosp', ""))
         f_addr = st.text_area("住址", value=st.session_state.get('edit_addr', ""))
         f_tabo = st.text_input("禁忌", value=st.session_state.get('edit_tabo', ""))
         f_days = st.number_input("天數", min_value=1, value=int(st.session_state.get('edit_days', 1)))
@@ -112,7 +119,7 @@ with st.sidebar:
         if st.form_submit_button("💖 儲存資料"):
             new_row = {
                 "日期": str(f_date), "時段": f_slot, "預約時間": f_time, "姓名": f_name,
-                "電話": f_phone, "預產期": str(f_due), "產檢醫院": f_hosp, "住址": f_addr,
+                "電話": f_phone, "醫院": f_hosp, "預產期": str(f_due), "住址": f_addr,
                 "禁忌": f_tabo, "天數": f_days, "來源": f_sour, "業務": f_sale, "簽約狀態": f_contract
             }
             if is_editing:
@@ -133,7 +140,7 @@ with tab1:
 
     def draw_section(slot_name, header_class):
         st.markdown(f"<div class='{header_class}'>{slot_name}預約清單</div>", unsafe_allow_html=True)
-        slot_df = df[(df["日期"] == t_str) & (df["時段"] == slot_name)].copy()
+        slot_df = df[(df["日期"].astype(str) == t_str) & (df["時段"] == slot_name)].copy()
         
         if not slot_df.empty:
             st.dataframe(slot_df[display_cols], use_container_width=True, hide_index=True)
@@ -148,8 +155,8 @@ with tab1:
                         st.session_state.edit_time = row['預約時間']
                         st.session_state.edit_name = row['姓名']
                         st.session_state.edit_phone = row['電話']
+                        st.session_state.edit_hosp = row['醫院']
                         st.session_state.edit_due = datetime.strptime(str(row['預產期']), '%Y-%m-%d')
-                        st.session_state.edit_hosp = row['產檢醫院']
                         st.session_state.edit_addr = row['住址']
                         st.session_state.edit_tabo = row['禁忌']
                         st.session_state.edit_days = row['天數']
@@ -169,14 +176,13 @@ with tab1:
 with tab2:
     st.markdown("### 📊 月度數據總覽")
     
-    # 月份選擇
     col_y, col_m = st.columns(2)
     current_year = datetime.now().year
     sel_year = col_y.selectbox("選擇年份", range(current_year-1, current_year+2), index=1)
     sel_month = col_m.selectbox("選擇月份", range(1, 13), index=datetime.now().month-1)
     month_to_show = f"{sel_year}-{sel_month:02d}"
     
-    month_df = df[df["日期"].str.startswith(month_to_show)].copy()
+    month_df = df[df["日期"].astype(str).str.startswith(month_to_show)].copy()
     
     if not month_df.empty:
         # 1. 數據卡片
@@ -214,6 +220,7 @@ with tab2:
         
         # 3. 月份詳細清單
         st.markdown(f"<div class='month-header'>📅 {sel_month} 月份完整預約清單</div>", unsafe_allow_html=True)
-        st.dataframe(month_df.sort_values(["日期", "時段"]), use_container_width=True, hide_index=True)
+        # 💡 這邊會依照 all_cols 的順序 (日期, 時段, 預約時間, 姓名, 電話, 醫院, 預產期...) 顯示
+        st.dataframe(month_df[all_cols].sort_values(["日期", "時段"]), use_container_width=True, hide_index=True)
     else:
         st.warning(f"目前尚無 {month_to_show} 的預約資料")
