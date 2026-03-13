@@ -3,25 +3,36 @@ import pandas as pd
 from datetime import datetime
 import os
 
-# 設定網頁標題與風格
 st.set_page_config(page_title="小幸孕預約系統", layout="wide")
-st.markdown("### 🍼 小幸孕試吃預約登記系統")
 
-# 資料存儲檔案路徑
+# 標題與風格
+st.markdown("<h2 style='text-align: center;'>🍼 小幸孕試吃預約登記系統</h2>", unsafe_allow_html=True)
+
 DB_FILE = "data.csv"
+# 欄位順序調整：日期 -> 時段 -> 預約時間 -> 姓名...
+cols = ["日期", "時段", "預約時間", "姓名", "電話", "預產期", "醫院", "住址", "禁忌", "天數", "來源", "業務"]
 
-# 初始化資料庫
 if os.path.exists(DB_FILE):
     df = pd.read_csv(DB_FILE)
+    # 確保欄位一致
+    for col in cols:
+        if col not in df.columns:
+            df[col] = ""
 else:
-    df = pd.DataFrame(columns=["日期", "時段", "姓名", "電話", "預產期", "醫院", "住址", "禁忌", "天數", "來源", "業務"])
+    df = pd.DataFrame(columns=cols)
 
-# --- 側邊欄：新增預約 ---
+# --- 側邊欄：新增登記 ---
 with st.sidebar:
-    st.header("📝 新增登記")
+    st.header("📝 新增預約")
     with st.form("my_form", clear_on_submit=True):
         date = st.date_input("試吃日期")
+        
+        # 將時段與時間分開輸入
         time_slot = st.selectbox("預約時段", ["中午", "晚上"])
+        exact_time = st.text_input("預約具體時間", placeholder="例如：11:30-12:30")
+        
+        st.divider() # 分隔線
+        
         name = st.text_input("客戶姓名")
         phone = st.text_input("電話")
         due_date = st.date_input("預產期")
@@ -30,45 +41,45 @@ with st.sidebar:
         taboo = st.text_input("禁忌")
         days = st.number_input("天數", min_value=1, value=1)
         source = st.text_input("來源")
-        sales = st.text_input("業務人員")
+        sales = st.text_input("業務")
         
-        submitted = st.form_submit_button("確認提交")
+        submitted = st.form_submit_button("確認提交登記")
+        
         if submitted:
             new_row = {
-                "日期": str(date), "時段": time_slot, "姓名": name, "電話": phone,
-                "預產期": str(due_date), "醫院": hospital, "住址": address,
-                "禁忌": taboo, "天數": days, "來源": source, "業務": sales
+                "日期": str(date), "時段": time_slot, "預約時間": exact_time, 
+                "姓名": name, "電話": phone, "預產期": str(due_date), 
+                "醫院": hospital, "住址": address, "禁忌": taboo, 
+                "天數": days, "來源": source, "業務": sales
             }
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
             df.to_csv(DB_FILE, index=False)
             st.success("✅ 登記成功！")
             st.rerun()
 
-# --- 主畫面：預約看板 ---
+# --- 主畫面：排程看板 ---
 target_date = st.date_input("📅 選擇查看日期", datetime.now())
-selected_date_str = str(target_date)
+t_str = str(target_date)
+today_data = df[df["日期"] == t_str]
 
-# 篩選當天資料
-today_data = df[df["日期"] == selected_date_str]
+# 中午區塊
+st.markdown(f"<div style='background-color:#E2E2F0; padding:10px; border-radius:5px; margin-bottom:10px;'><b>☀️ 中午預約登記 ({t_str})</b></div>", unsafe_allow_html=True)
+noon_df = today_data[today_data["時段"] == "中午"].drop(columns=["日期", "時段"])
+if not noon_df.empty:
+    st.dataframe(noon_df, use_container_width=True)
+else:
+    st.write("今日中午暫無預約")
 
-col1, col2 = st.columns(2)
+st.write("") 
 
-with col1:
-    st.info(f"☀️ 中午預約 ({selected_date_str})")
-    noon_df = today_data[today_data["時段"] == "中午"]
-    if not noon_df.empty:
-        st.dataframe(noon_df.drop(columns=["日期", "時段"]), use_container_width=True)
-    else:
-        st.write("目前無資料")
+# 晚上區塊
+st.markdown(f"<div style='background-color:#E2F0E2; padding:10px; border-radius:5px; margin-bottom:10px;'><b>🌙 晚上預約登記 ({t_str})</b></div>", unsafe_allow_html=True)
+night_df = today_data[today_data["時段"] == "晚上"].drop(columns=["日期", "時段"])
+if not night_df.empty:
+    st.dataframe(night_df, use_container_width=True)
+else:
+    st.write("今日晚上暫無預約")
 
-with col2:
-    st.warning(f"🌙 晚上預約 ({selected_date_str})")
-    night_df = today_data[today_data["時段"] == "晚上"]
-    if not night_df.empty:
-        st.dataframe(night_df.drop(columns=["日期", "時段"]), use_container_width=True)
-    else:
-        st.write("目前無資料")
-
-# 匯出完整報表
-st.divider()
-st.download_button("📥 匯出完整 Excel (CSV)", df.to_csv(index=False).encode('utf-8-sig'), "小幸孕報表.csv", "text/csv")
+# 下載按鈕
+st.sidebar.divider()
+st.sidebar.download_button("📥 匯出完整報表", df.to_csv(index=False).encode('utf-8-sig'), "小幸孕報表.csv", "text/csv")
