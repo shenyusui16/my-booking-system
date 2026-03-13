@@ -84,4 +84,35 @@ def render_styled_table(slot_name, color, bg_light):
         st.dataframe(slot_df[display_cols], use_container_width=True, hide_index=True)
         
         # 表格下方的快速管理區
-        with st.expander(f"⚙️ 管理{slot_name}
+        with st.expander(f"⚙️ 管理{slot_name}的資料 (修改/刪除)"):
+            for idx, row in slot_df.iterrows():
+                c1, c2, c3 = st.columns([6, 1, 1])
+                c1.write(f"【{row['預約時間']}】{row['姓名']} ({row['電話']})")
+                if c2.button("📝 改", key=f"e_{idx}"):
+                    st.session_state.edit_index = idx
+                    st.session_state.edit_date = datetime.strptime(row['日期'], '%Y-%m-%d')
+                    st.session_state.edit_slot = row['時段']
+                    st.session_state.edit_time = row['預約時間']
+                    st.session_state.edit_name = row['姓名']
+                    st.session_state.edit_phone = row['電話']
+                    st.session_state.edit_due = datetime.strptime(row['預產期'], '%Y-%m-%d')
+                    st.session_state.edit_hosp = row['醫院']
+                    st.session_state.edit_addr = row['住址']
+                    st.session_state.edit_tabo = row['禁忌']
+                    st.session_state.edit_days = row['天數']
+                    st.session_state.edit_sour = row['來源']
+                    st.session_state.edit_sale = row['業務']
+                    st.rerun()
+                if c3.button("🗑️ 刪", key=f"d_{idx}"):
+                    df.drop(idx).to_csv(DB_FILE, index=False)
+                    st.rerun()
+    else:
+        st.markdown(f"<div style='padding:20px; border:1px solid #EEE; text-align:center; color:#999;'>今日{slot_name}暫無預約</div>", unsafe_allow_html=True)
+    st.write("")
+
+render_styled_table("中午", "#6A5ACD", "#F0F0FF") # 紫色
+render_styled_table("晚上", "#2E8B57", "#F0FFF0") # 綠色
+
+# 側邊欄底部
+st.sidebar.divider()
+st.sidebar.download_button("📥 下載 Excel 報表", df.to_csv(index=False).encode('utf-8-sig'), f"小幸孕報表_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
