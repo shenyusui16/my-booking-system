@@ -6,7 +6,7 @@ import os
 # 設定網頁寬度與標題
 st.set_page_config(page_title="小幸孕預約管理", layout="wide")
 
-# 自定義 CSS
+# 自定義 CSS 樣式
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -19,18 +19,24 @@ st.markdown("""
 st.markdown("<h1 style='text-align: center; color: #333;'>🍼 小幸孕試吃預約管理系統</h1>", unsafe_allow_html=True)
 
 DB_FILE = "data.csv"
-# 看板顯示順序
-display_cols = ["預約時間", "姓名", "電話", "醫院", "天數", "業務", "來源", "預產期", "住址", "禁忌"]
+
+# --- 核心設定：統一左右兩邊的欄位順序 ---
+# 這裡定義了右邊看板表格顯示的順序
+display_cols = ["預約時間", "姓名", "電話", "預產期", "產檢醫院", "住址", "禁忌", "天數", "來源", "業務"]
 all_cols = ["日期", "時段"] + display_cols
 
 if os.path.exists(DB_FILE):
     df = pd.read_csv(DB_FILE)
+    # 確保所有必要的欄位都存在，若無則補空值
     for col in all_cols:
         if col not in df.columns: df[col] = ""
+    # 處理舊資料中欄位名稱不一的問題（例如 醫院 改名 產檢醫院）
+    if "醫院" in df.columns and "產檢醫院" in df.columns:
+        df["產檢醫院"] = df["產檢醫院"].fillna(df["醫院"])
 else:
     df = pd.DataFrame(columns=all_cols)
 
-# --- 側邊欄：新增/修改 ---
+# --- 側邊欄：表單輸入 (順序已固定) ---
 with st.sidebar:
     st.markdown("### 📝 預約表單")
     is_editing = 'edit_index' in st.session_state
@@ -47,10 +53,11 @@ with st.sidebar:
         f_date = col_s1.date_input("試吃日期", value=st.session_state.get('edit_date', datetime.now()))
         f_slot = col_s2.selectbox("時段", ["中午", "晚上"], index=0 if st.session_state.get('edit_slot') == "中午" else 1)
         
+        # 預約時間不備註
         f_time = st.text_input("預約時間", value=st.session_state.get('edit_time', ""))
         
         st.markdown("---")
-        # 欄位順序調整
+        # 左側表單欄位順序
         f_name = st.text_input("客戶姓名", value=st.session_state.get('edit_name', ""))
         f_phone = st.text_input("電話", value=st.session_state.get('edit_phone', ""))
         f_due = st.date_input("預產期", value=st.session_state.get('edit_due', datetime.now()))
@@ -64,38 +71,39 @@ with st.sidebar:
         save_btn = st.form_submit_button("💾 儲存資料" if is_editing else "➕ 確認登記")
         
         if save_btn:
-            new_data = {
+            new_row = {
                 "日期": str(f_date), "時段": f_slot, "預約時間": f_time, "姓名": f_name,
-                "電話": f_phone, "預產期": str(f_due), "醫院": f_hosp, "住址": f_addr,
+                "電話": f_phone, "預產期": str(f_due), "產檢醫院": f_hosp, "住址": f_addr,
                 "禁忌": f_tabo, "天數": f_days, "來源": f_sour, "業務": f_sale
             }
             if is_editing:
                 df = df.drop(st.session_state.edit_index)
             
-            df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
             df.to_csv(DB_FILE, index=False)
             for key in list(st.session_state.keys()):
                 if key.startswith('edit_'): del st.session_state[key]
             st.success("操作成功！")
             st.rerun()
 
-# --- 主畫面：排程看板 ---
+# --- 主畫面：排程看板 (依照 display_cols 排序) ---
 c_date, c_empty = st.columns([2, 5])
 target_date = c_date.date_input("📅 查看日期", datetime.now())
 t_str = str(target_date)
 
 def draw_section(slot_name, header_class):
     st.markdown(f"<div class='{header_class}'>{slot_name}預約清單 ({t_str})</div>", unsafe_allow_html=True)
-    slot_df = df[(df["日期"] == t_str) & (df["時段"] == slot_name)].sort_values("預約時間")
+    # 過濾當天時段並排序
+    current_df = df[(df["日期"] == t_str) & (df["時段"] == slot_name)].sort_values("預約時間")
     
-    if not slot_df.empty:
-        st.dataframe(slot_df[display_cols], use_container_width=True, hide_index=True)
+    if not current_df.empty:
+        # 關鍵：這裡 [display_cols] 會強制右邊表格按照你要的順序排列
+        st.dataframe(current_df[display_cols], use_container_width=True, hide_index=True)
         
         with st.expander(f"⚙️ 管理{slot_name}的資料"):
-            for idx, row in slot_df.iterrows():
+            for idx, row in current_df.iterrows():
                 mc1, mc2, mc3 = st.columns([4, 1, 1])
                 mc1.write(f"**{row['預約時間']}** - {row['姓名']} ({row['電話']})")
-                # 修改這裡的按鈕文字
                 if mc2.button("📝 編輯", key=f"e_{idx}"):
                     st.session_state.edit_index = idx
                     st.session_state.edit_date = datetime.strptime(row['日期'], '%Y-%m-%d')
@@ -104,23 +112,4 @@ def draw_section(slot_name, header_class):
                     st.session_state.edit_name = row['姓名']
                     st.session_state.edit_phone = row['電話']
                     st.session_state.edit_due = datetime.strptime(row['預產期'], '%Y-%m-%d')
-                    st.session_state.edit_hosp = row['醫院']
-                    st.session_state.edit_addr = row['住址']
-                    st.session_state.edit_tabo = row['禁忌']
-                    st.session_state.edit_days = row['天數']
-                    st.session_state.edit_sour = row['來源']
-                    st.session_state.edit_sale = row['業務']
-                    st.rerun()
-                if mc3.button("🗑️ 刪除", key=f"d_{idx}"):
-                    df.drop(idx).to_csv(DB_FILE, index=False)
-                    st.rerun()
-    else:
-        st.markdown("<div style='padding:15px; background:white; border:1px solid #ddd; text-align:center; color:#999;'>暫無資料</div>", unsafe_allow_html=True)
-    st.write("")
-
-draw_section("中午", "noon-header")
-draw_section("晚上", "night-header")
-
-# 下載區
-st.sidebar.markdown("---")
-st.sidebar.download_button("📥 下載 Excel 報表", df.to_csv(index=False).encode('utf-8-sig'), f"預約報表_{t_str}.csv", "text/csv")
+                    st.session_state.edit
