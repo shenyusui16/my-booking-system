@@ -6,7 +6,7 @@ import os
 # 1. 網頁基本設定
 st.set_page_config(page_title="試吃預約管理系統", layout="wide")
 
-# 高級視覺美化
+# 高級視覺美化 CSS
 st.markdown("""
     <style>
     .main { background-color: #f8f9fa; }
@@ -21,7 +21,7 @@ st.markdown("<h1 style='text-align: center;'>🍼 試吃預約管理系統</h1>"
 
 DB_FILE = "data.csv"
 
-# 2. 定義欄位排序 (與您的要求完全一致)
+# 2. 定義欄位排序
 display_cols = ["預約時間", "姓名", "電話", "預產期", "產檢醫院", "住址", "禁忌", "天數", "來源", "業務", "簽約狀態"]
 all_cols = ["日期", "時段"] + display_cols
 
@@ -29,7 +29,10 @@ all_cols = ["日期", "時段"] + display_cols
 if os.path.exists(DB_FILE):
     try:
         df = pd.read_csv(DB_FILE)
-        # 自動補齊缺失欄位
+        # 修正可能存在的舊欄位名稱
+        if "預預約時間" in df.columns: df = df.rename(columns={"預預約時間": "預約時間"})
+        if "醫院" in df.columns: df = df.rename(columns={"醫院": "產檢醫院"})
+        # 確保所有欄位都存在
         for col in all_cols:
             if col not in df.columns:
                 df[col] = "未簽約" if col == "簽約狀態" else ""
@@ -79,14 +82,14 @@ with st.sidebar:
             df.to_csv(DB_FILE, index=False, encoding='utf-8-sig')
             for key in list(st.session_state.keys()):
                 if key.startswith('edit_'): del st.session_state[key]
-            st.success("資料已更新！")
+            st.success("成功！")
             st.rerun()
 
 # --- 主畫面：呈現 ---
 tab1, tab2 = st.tabs(["📅 當日排程看板", "📊 全月績效總覽"])
 
 with tab1:
-    target_date = st.date_input("選擇日期", datetime.now())
+    target_date = st.date_input("選擇查看日期", datetime.now(), key="day_picker")
     t_str = str(target_date)
 
     def draw_day_section(slot_name, header_class):
@@ -94,10 +97,10 @@ with tab1:
         slot_df = df[(df["日期"] == t_str) & (df["時段"] == slot_name)].copy()
         if not slot_df.empty:
             st.dataframe(slot_df[display_cols], use_container_width=True, hide_index=True)
-            with st.expander(f"⚙️ 管理資料"):
+            with st.expander(f"⚙️ 修改/刪除資料"):
                 for idx, row in slot_df.iterrows():
                     c1, c2, c3 = st.columns([4, 1, 1])
-                    c1.write(f"**{row['預約時間']}** - {row['姓名']} ({row['業務']} / {row['簽約狀態']})")
+                    c1.write(f"⏰ **{row['預約時間']}** | 👤 {row['姓名']} ({row['業務']})")
                     if c2.button("編輯", key=f"e_{idx}"):
                         st.session_state.edit_index = idx
                         st.session_state.edit_date = datetime.strptime(str(row['日期']), '%Y-%m-%d')
@@ -124,19 +127,19 @@ with tab1:
     draw_day_section("晚上", "night-header")
 
 with tab2:
-    current_month = target_date.strftime('%Y-%m')
+    target_month_date = st.date_input("選擇月份 (點選任一天即可)", datetime.now(), key="month_picker")
+    current_month = target_month_date.strftime('%Y-%m')
     st.markdown(f"<div class='month-header'>{current_month} 月份詳細清單</div>", unsafe_allow_html=True)
     
     month_df = df[df["日期"].str.startswith(current_month)].copy()
     if not month_df.empty:
-        # 全月排序
-        month_df = month_df.sort_values(by=["日期", "時段", "預預約時間"], ascending=[True, False, True])
+        # 修正排序鍵值報錯，確保使用正確的欄位名稱
+        month_df = month_df.sort_values(by=["日期", "時段", "預約時間"], ascending=[True, False, True])
         st.dataframe(month_df[["日期", "時段"] + display_cols], use_container_width=True, hide_index=True)
         
         # --- 業務績效統計表 ---
         st.markdown(f"<div class='sales-header'>{current_month} 業務績效統計表</div>", unsafe_allow_html=True)
         
-        # 建立業務統計資料
         sales_stats = []
         unique_sales = [s for s in month_df["業務"].unique() if str(s) != "nan" and str(s) != ""]
         
@@ -145,7 +148,6 @@ with tab2:
             total = len(sale_data)
             signed = len(sale_data[sale_data["簽約狀態"] == "已簽約"])
             unsigned = len(sale_data[sale_data["簽約狀態"] == "未簽約"])
-            # 計算簽約率
             rate = f"{(signed/total)*100:.1f}%" if total > 0 else "0%"
             sales_stats.append({
                 "業務姓名": sale,
@@ -155,21 +157,20 @@ with tab2:
                 "簽約達成率": rate
             })
         
-        stats_df = pd.DataFrame(sales_stats)
-        if not stats_df.empty:
-            st.table(stats_df) # 使用 table 顯示更像報表
+        if sales_stats:
+            stats_df = pd.DataFrame(sales_stats)
+            st.table(stats_df)
         else:
-            st.write("本月尚未登記業務姓名")
+            st.write("本月尚未登記任何業務資料")
             
-        # 整月大計
         st.divider()
         m1, m2, m3 = st.columns(3)
         m1.metric("全月總預約", len(month_df))
         m2.metric("全月已簽約", len(month_df[month_df["簽約狀態"] == "已簽約"]))
         m3.metric("全月未簽約", len(month_df[month_df["簽約狀態"] == "未簽約"]))
     else:
-        st.info(f"{current_month} 尚無任何紀錄")
+        st.info(f"{current_month} 尚無資料")
 
 # 匯出按鈕
 st.sidebar.divider()
-st.sidebar.download_button("📥 匯出系統完整資料", df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), f"預約備份_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
+st.sidebar.download_button("📥 下載完整資料備份", df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig'), f"預約系統備份_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
